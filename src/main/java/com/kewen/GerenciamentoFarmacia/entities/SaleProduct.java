@@ -10,7 +10,9 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.GenerationType;
+import lombok.Data;
 
+@Data
 @Entity
 @Table(name = "SaleProduct", schema = "public")
 public class SaleProduct {
