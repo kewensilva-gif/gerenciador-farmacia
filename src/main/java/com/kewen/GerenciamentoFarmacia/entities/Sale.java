@@ -2,9 +2,11 @@ package com.kewen.GerenciamentoFarmacia.entities;
 
 import java.math.BigDecimal;
 
+import com.kewen.GerenciamentoFarmacia.converters.PaymentMethodConverter;
 import com.kewen.GerenciamentoFarmacia.enums.PaymentMethodEnum;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -25,6 +27,7 @@ public class Sale {
     @Column(name = "discount", nullable = false, precision = 10, scale = 2)
     private BigDecimal discount;
 
-    @Column(name = "payment_method", nullable = false)
+    @Column(name = "payment_method", nullable = false, columnDefinition = "payment_method")
+    @Convert(converter = PaymentMethodConverter.class)
     private PaymentMethodEnum paymentMethod;
 }

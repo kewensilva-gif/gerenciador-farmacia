@@ -27,6 +27,6 @@ public class Person {
     private String cpf;
 
     @OneToOne
-    @JoinColumn(name = "user", nullable = false)
+    @JoinColumn(name = "user_uuid", nullable = false)
     private User user;
 }
