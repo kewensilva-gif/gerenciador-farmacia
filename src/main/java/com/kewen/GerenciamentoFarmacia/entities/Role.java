@@ -1,5 +1,6 @@
 package com.kewen.GerenciamentoFarmacia.entities;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.List;
 import java.util.UUID;
 import jakarta.persistence.Column;
@@ -24,5 +25,6 @@ public class Role {
     private String name;
 
     @ManyToMany(mappedBy = "roles")
+    @JsonIgnore
     private List<User> users;
 }
