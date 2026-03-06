@@ -15,8 +15,6 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
-
 @Service
 @RequiredArgsConstructor
 public class AuthenticationService {
@@ -49,7 +47,7 @@ public class AuthenticationService {
         user.setEmail(request.email());
         user.setPassword(passwordEncoder.encode(request.password()));
         user.setEnabled(true);
-        user.setRoles(List.of(defaultRole));
+        user.setRole(defaultRole);
 
         User savedUser = userRepository.save(user);
         String token = jwtService.generateToken(userDetailsService.loadUserByUsername(savedUser.getUsername()));

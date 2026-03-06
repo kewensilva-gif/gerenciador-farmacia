@@ -33,16 +33,12 @@ public class CustomUserDetailsService implements UserDetailsService {
     }
 
     private List<GrantedAuthority> mapAuthorities(User user) {
-        if (user.getRoles() == null) {
+        if (user.getRole() == null || user.getRole().getName() == null) {
             return List.of();
         }
 
-        return user.getRoles().stream()
-                .map(Role::getName)
-                .filter(name -> name != null && !name.isBlank())
-                .map(name -> name.startsWith("ROLE_") ? name : "ROLE_" + name.toUpperCase())
-                .map(SimpleGrantedAuthority::new)
-                .map(GrantedAuthority.class::cast)
-                .toList();
+        String roleName = user.getRole().getName();
+        String authority = roleName.startsWith("ROLE_") ? roleName : "ROLE_" + roleName.toUpperCase();
+        return List.of(new SimpleGrantedAuthority(authority));
     }
 }

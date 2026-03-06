@@ -100,8 +100,8 @@ public class UserService {
             existingUser.setEnabled(userDetails.getEnabled());
         }
 
-        if (userDetails.getRoles() != null) {
-            existingUser.setRoles(userDetails.getRoles());
+        if (userDetails.getRole() != null) {
+            existingUser.setRole(userDetails.getRole());
         }
     }
 
