@@ -1,9 +1,8 @@
 package com.kewen.GerenciamentoFarmacia.services;
 
+import com.kewen.GerenciamentoFarmacia.entities.Category;
 import com.kewen.GerenciamentoFarmacia.entities.Product;
-import com.kewen.GerenciamentoFarmacia.entities.Sale;
 import com.kewen.GerenciamentoFarmacia.entities.SaleProduct;
-import com.kewen.GerenciamentoFarmacia.enums.PaymentMethodEnum;
 import com.kewen.GerenciamentoFarmacia.repositories.SaleProductRepository;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -15,10 +14,12 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -27,134 +28,153 @@ class SaleProductServiceTest {
     @Mock
     private SaleProductRepository saleProductRepository;
 
+    @Mock
+    private ProductService productService;
+
     @InjectMocks
     private SaleProductService saleProductService;
 
-    private SaleProduct saleProduct;
-    private Sale sale;
     private Product product;
+    private SaleProduct saleProduct;
 
     @BeforeEach
     void setUp() {
-        sale = new Sale();
-        sale.setId(1L);
-        sale.setTotalPrice(new BigDecimal("25.00"));
-        sale.setDiscount(new BigDecimal("0.00"));
-        sale.setPaymentMethod(PaymentMethodEnum.PIX);
+        Category category = new Category();
+        category.setId(1L);
+        category.setName("Medicamentos");
+        category.setEnabled(true);
 
         product = new Product();
         product.setId(1L);
         product.setName("Paracetamol 500mg");
-        product.setBarcode("7891234560001");
         product.setUnitPrice(new BigDecimal("12.50"));
+        product.setStockQuantity(100);
+        product.setExpirationDate(LocalDate.of(2026, 12, 31));
+        product.setCategory(category);
+        product.setEnabled(true);
 
         saleProduct = new SaleProduct();
         saleProduct.setId(1L);
-        saleProduct.setSale(sale);
         saleProduct.setProduct(product);
-        saleProduct.setQuantity(2L);
-        saleProduct.setUnitPrice(new BigDecimal("12.50"));
+        saleProduct.setQuantity(5L);
     }
 
-    // -------------------------------------------------------------------------
-    // findById
-    // -------------------------------------------------------------------------
+    // ======================== PREPARE ITEM ========================
 
     @Test
-    @DisplayName("findById - deve retornar Optional com item quando encontrado")
-    void findById_deveRetornarItemQuandoEncontrado() {
+    @DisplayName("prepareItem - deve preparar item com sucesso")
+    void prepareItem_devePrepararItemComSucesso() {
+        when(productService.findById(1L)).thenReturn(Optional.of(product));
+
+        saleProductService.prepareItem(saleProduct);
+
+        assertThat(saleProduct.getUnitPrice()).isEqualTo(new BigDecimal("12.50"));
+        verify(productService).debitStock(1L, 5);
+    }
+
+    @Test
+    @DisplayName("prepareItem - deve lançar exceção para produto não encontrado ou desativado")
+    void prepareItem_deveLancarExcecaoParaProdutoNaoEncontrado() {
+        when(productService.findById(1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> saleProductService.prepareItem(saleProduct))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("Produto não encontrado ou desativado");
+    }
+
+    @Test
+    @DisplayName("prepareItem - deve lançar exceção para produto vencido")
+    void prepareItem_deveLancarExcecaoParaProdutoVencido() {
+        product.setExpirationDate(LocalDate.of(2020, 1, 1));
+        when(productService.findById(1L)).thenReturn(Optional.of(product));
+
+        assertThatThrownBy(() -> saleProductService.prepareItem(saleProduct))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Produto vencido não pode ser vendido");
+    }
+
+    @Test
+    @DisplayName("prepareItem - deve lançar exceção para quantidade zero ou negativa")
+    void prepareItem_deveLancarExcecaoParaQuantidadeInvalida() {
+        saleProduct.setQuantity(0L);
+
+        assertThatThrownBy(() -> saleProductService.prepareItem(saleProduct))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("A quantidade do produto da venda deve ser positiva");
+    }
+
+    // ======================== DELETE ========================
+
+    @Test
+    @DisplayName("deleteById - deve restaurar estoque e deletar item")
+    void deleteById_deveRestaurarEstoqueEDeletar() {
+        when(saleProductRepository.findById(1L)).thenReturn(Optional.of(saleProduct));
+
+        saleProductService.deleteById(1L);
+
+        verify(productService).addStock(1L, 5);
+        verify(saleProductRepository).delete(saleProduct);
+    }
+
+    @Test
+    @DisplayName("deleteById - deve lançar exceção para item não encontrado")
+    void deleteById_deveLancarExcecaoParaItemNaoEncontrado() {
+        when(saleProductRepository.findById(1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> saleProductService.deleteById(1L))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("Item não encontrado");
+    }
+
+    // ======================== RESTORE STOCK ========================
+
+    @Test
+    @DisplayName("restoreStock - deve restaurar estoque do produto")
+    void restoreStock_deveRestaurarEstoque() {
+        saleProductService.restoreStock(saleProduct);
+
+        verify(productService).addStock(1L, 5);
+    }
+
+    // ======================== FIND ========================
+
+    @Test
+    @DisplayName("findById - deve retornar item quando encontrado")
+    void findById_deveRetornarItem() {
         when(saleProductRepository.findById(1L)).thenReturn(Optional.of(saleProduct));
 
         Optional<SaleProduct> result = saleProductService.findById(1L);
 
         assertThat(result).isPresent();
-        assertThat(result.get().getProduct().getName()).isEqualTo("Paracetamol 500mg");
-        verify(saleProductRepository, times(1)).findById(1L);
     }
 
     @Test
-    @DisplayName("findById - deve retornar Optional vazio quando não encontrado")
-    void findById_deveRetornarVazioQuandoNaoEncontrado() {
-        when(saleProductRepository.findById(99L)).thenReturn(Optional.empty());
-
-        Optional<SaleProduct> result = saleProductService.findById(99L);
-
-        assertThat(result).isEmpty();
-        verify(saleProductRepository, times(1)).findById(99L);
-    }
-
-    // -------------------------------------------------------------------------
-    // findAll
-    // -------------------------------------------------------------------------
-
-    @Test
-    @DisplayName("findAll - deve retornar lista de itens da venda")
-    void findAll_deveRetornarListaDeItens() {
+    @DisplayName("findAll - deve retornar todos os itens")
+    void findAll_deveRetornarTodos() {
         when(saleProductRepository.findAll()).thenReturn(List.of(saleProduct));
 
         List<SaleProduct> result = saleProductService.findAll();
 
         assertThat(result).hasSize(1);
-        verify(saleProductRepository, times(1)).findAll();
     }
 
-    // -------------------------------------------------------------------------
-    // findBySaleId / findByProductId
-    // -------------------------------------------------------------------------
-
     @Test
-    @DisplayName("findBySaleId - deve retornar itens da venda pelo saleId")
-    void findBySaleId_deveRetornarItensPorVenda() {
+    @DisplayName("findBySaleId - deve retornar itens da venda")
+    void findBySaleId_deveRetornarItensDaVenda() {
         when(saleProductRepository.findBySaleId(1L)).thenReturn(List.of(saleProduct));
 
         List<SaleProduct> result = saleProductService.findBySaleId(1L);
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).getSale().getId()).isEqualTo(1L);
-        verify(saleProductRepository, times(1)).findBySaleId(1L);
     }
 
     @Test
-    @DisplayName("findByProductId - deve retornar itens da venda pelo productId")
-    void findByProductId_deveRetornarItensPorProduto() {
+    @DisplayName("findByProductId - deve retornar itens do produto")
+    void findByProductId_deveRetornarItensDoProduto() {
         when(saleProductRepository.findByProductId(1L)).thenReturn(List.of(saleProduct));
 
         List<SaleProduct> result = saleProductService.findByProductId(1L);
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).getProduct().getId()).isEqualTo(1L);
-        verify(saleProductRepository, times(1)).findByProductId(1L);
-    }
-
-    // -------------------------------------------------------------------------
-    // deleteById / existsById
-    // -------------------------------------------------------------------------
-
-    @Test
-    @DisplayName("deleteById - deve chamar deleteById no repositório")
-    void deleteById_deveChamarDeleteById() {
-        doNothing().when(saleProductRepository).deleteById(1L);
-
-        saleProductService.deleteById(1L);
-
-        verify(saleProductRepository, times(1)).deleteById(1L);
-    }
-
-    @Test
-    @DisplayName("existsById - deve retornar true quando item existe")
-    void existsById_deveRetornarTrueQuandoExiste() {
-        when(saleProductRepository.existsById(1L)).thenReturn(true);
-
-        assertThat(saleProductService.existsById(1L)).isTrue();
-        verify(saleProductRepository, times(1)).existsById(1L);
-    }
-
-    @Test
-    @DisplayName("existsById - deve retornar false quando item não existe")
-    void existsById_deveRetornarFalseQuandoNaoExiste() {
-        when(saleProductRepository.existsById(99L)).thenReturn(false);
-
-        assertThat(saleProductService.existsById(99L)).isFalse();
-        verify(saleProductRepository, times(1)).existsById(99L);
     }
 }

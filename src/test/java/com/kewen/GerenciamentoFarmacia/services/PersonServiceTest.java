@@ -1,7 +1,8 @@
 package com.kewen.GerenciamentoFarmacia.services;
 
+import com.kewen.GerenciamentoFarmacia.entities.Customer;
+import com.kewen.GerenciamentoFarmacia.entities.Employee;
 import com.kewen.GerenciamentoFarmacia.entities.Person;
-import com.kewen.GerenciamentoFarmacia.entities.User;
 import com.kewen.GerenciamentoFarmacia.repositories.PersonRepository;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -14,7 +15,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -34,67 +34,124 @@ class PersonServiceTest {
 
     @BeforeEach
     void setUp() {
-        User user = new User();
-        user.setUuid(UUID.randomUUID());
-        user.setUsername("carlosmendes");
-        user.setEmail("carlos@email.com");
-        user.setPassword("senha456");
-
         person = new Person();
         person.setId(1L);
-        person.setFirstname("Carlos");
-        person.setLastname("Mendes");
-        person.setCpf("11122233344");
-        person.setUser(user);
+        person.setFirstname("João");
+        person.setLastname("Silva");
+        person.setCpf("12345678901");
+        person.setEmployee(null);
+        person.setCustomer(null);
     }
 
-    // -------------------------------------------------------------------------
-    // save
-    // -------------------------------------------------------------------------
+    // ======================== SAVE ========================
 
     @Test
     @DisplayName("save - deve salvar e retornar a pessoa")
     void save_deveSalvarERetornarPessoa() {
+        when(personRepository.existsByCpf("12345678901")).thenReturn(false);
         when(personRepository.save(any(Person.class))).thenReturn(person);
 
         Person result = personService.save(person);
 
         assertThat(result).isNotNull();
-        assertThat(result.getFirstname()).isEqualTo("Carlos");
-        assertThat(result.getCpf()).isEqualTo("11122233344");
-        verify(personRepository, times(1)).save(person);
+        assertThat(result.getFirstname()).isEqualTo("João");
+        verify(personRepository).save(person);
     }
 
-    // -------------------------------------------------------------------------
-    // findById
-    // -------------------------------------------------------------------------
+    @Test
+    @DisplayName("save - deve lançar exceção para CPF nulo")
+    void save_deveLancarExcecaoParaCpfNulo() {
+        person.setCpf(null);
+
+        assertThatThrownBy(() -> personService.save(person))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("O CPF é obrigatório");
+    }
 
     @Test
-    @DisplayName("findById - deve retornar Optional com pessoa quando encontrada")
-    void findById_deveRetornarPessoaQuandoEncontrada() {
+    @DisplayName("save - deve lançar exceção para CPF em branco")
+    void save_deveLancarExcecaoParaCpfEmBranco() {
+        person.setCpf("   ");
+
+        assertThatThrownBy(() -> personService.save(person))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("O CPF é obrigatório");
+    }
+
+    @Test
+    @DisplayName("save - deve lançar exceção para CPF com formato inválido")
+    void save_deveLancarExcecaoParaCpfFormatoInvalido() {
+        person.setCpf("123456789");
+
+        assertThatThrownBy(() -> personService.save(person))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("O CPF deve conter exatamente 11 dígitos numéricos");
+    }
+
+    @Test
+    @DisplayName("save - deve lançar exceção para CPF com caracteres não numéricos")
+    void save_deveLancarExcecaoParaCpfComCaracteres() {
+        person.setCpf("123.456.789");
+
+        assertThatThrownBy(() -> personService.save(person))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("O CPF deve conter exatamente 11 dígitos numéricos");
+    }
+
+    @Test
+    @DisplayName("save - deve lançar exceção para CPF duplicado")
+    void save_deveLancarExcecaoParaCpfDuplicado() {
+        when(personRepository.existsByCpf("12345678901")).thenReturn(true);
+
+        assertThatThrownBy(() -> personService.save(person))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("CPF já cadastrado");
+    }
+
+    @Test
+    @DisplayName("save - deve lançar exceção para primeiro nome nulo")
+    void save_deveLancarExcecaoParaPrimeiroNomeNulo() {
+        person.setFirstname(null);
+        when(personRepository.existsByCpf("12345678901")).thenReturn(false);
+
+        assertThatThrownBy(() -> personService.save(person))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("O primeiro nome é obrigatório");
+    }
+
+    @Test
+    @DisplayName("save - deve lançar exceção para sobrenome nulo")
+    void save_deveLancarExcecaoParaSobrenomeNulo() {
+        person.setLastname(null);
+        when(personRepository.existsByCpf("12345678901")).thenReturn(false);
+
+        assertThatThrownBy(() -> personService.save(person))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("O sobrenome é obrigatório");
+    }
+
+    // ======================== FIND ========================
+
+    @Test
+    @DisplayName("findById - deve retornar pessoa quando encontrada")
+    void findById_deveRetornarPessoa() {
         when(personRepository.findById(1L)).thenReturn(Optional.of(person));
 
         Optional<Person> result = personService.findById(1L);
 
         assertThat(result).isPresent();
-        assertThat(result.get().getLastname()).isEqualTo("Mendes");
-        verify(personRepository, times(1)).findById(1L);
+        assertThat(result.get().getCpf()).isEqualTo("12345678901");
     }
 
     @Test
-    @DisplayName("findById - deve retornar Optional vazio quando não encontrada")
+    @DisplayName("findById - deve retornar vazio quando não encontrada")
     void findById_deveRetornarVazioQuandoNaoEncontrada() {
         when(personRepository.findById(99L)).thenReturn(Optional.empty());
 
         Optional<Person> result = personService.findById(99L);
 
         assertThat(result).isEmpty();
-        verify(personRepository, times(1)).findById(99L);
     }
-
-    // -------------------------------------------------------------------------
-    // findAll
-    // -------------------------------------------------------------------------
 
     @Test
     @DisplayName("findAll - deve retornar lista de pessoas")
@@ -104,139 +161,114 @@ class PersonServiceTest {
         List<Person> result = personService.findAll();
 
         assertThat(result).hasSize(1);
-        verify(personRepository, times(1)).findAll();
     }
 
     @Test
-    @DisplayName("findAll - deve retornar lista vazia quando não há pessoas")
-    void findAll_deveRetornarListaVazia() {
-        when(personRepository.findAll()).thenReturn(List.of());
+    @DisplayName("findByCpf - deve retornar pessoa por CPF")
+    void findByCpf_deveRetornarPessoaPorCpf() {
+        when(personRepository.findByCpf("12345678901")).thenReturn(Optional.of(person));
 
-        List<Person> result = personService.findAll();
-
-        assertThat(result).isEmpty();
-        verify(personRepository, times(1)).findAll();
-    }
-
-    // -------------------------------------------------------------------------
-    // findByCpf
-    // -------------------------------------------------------------------------
-
-    @Test
-    @DisplayName("findByCpf - deve retornar pessoa quando CPF existe")
-    void findByCpf_deveRetornarPessoaQuandoCpfExiste() {
-        when(personRepository.findByCpf("11122233344")).thenReturn(Optional.of(person));
-
-        Optional<Person> result = personService.findByCpf("11122233344");
+        Optional<Person> result = personService.findByCpf("12345678901");
 
         assertThat(result).isPresent();
-        assertThat(result.get().getFirstname()).isEqualTo("Carlos");
-        verify(personRepository, times(1)).findByCpf("11122233344");
     }
 
-    @Test
-    @DisplayName("findByCpf - deve retornar Optional vazio quando CPF não existe")
-    void findByCpf_deveRetornarVazioQuandoCpfNaoExiste() {
-        when(personRepository.findByCpf("00000000000")).thenReturn(Optional.empty());
-
-        Optional<Person> result = personService.findByCpf("00000000000");
-
-        assertThat(result).isEmpty();
-        verify(personRepository, times(1)).findByCpf("00000000000");
-    }
-
-    // -------------------------------------------------------------------------
-    // update
-    // -------------------------------------------------------------------------
+    // ======================== UPDATE ========================
 
     @Test
-    @DisplayName("update - deve atualizar e retornar a pessoa quando encontrada")
-    void update_deveAtualizarPessoaQuandoEncontrada() {
-        Person detalhes = new Person();
-        detalhes.setFirstname("Carlos");
-        detalhes.setLastname("Ferreira");
-        detalhes.setCpf("11122233344");
-        detalhes.setUser(person.getUser());
-
-        Person atualizado = new Person();
-        atualizado.setId(1L);
-        atualizado.setFirstname("Carlos");
-        atualizado.setLastname("Ferreira");
-        atualizado.setCpf("11122233344");
+    @DisplayName("update - deve atualizar pessoa existente")
+    void update_deveAtualizarPessoa() {
+        Person updated = new Person();
+        updated.setFirstname("João");
+        updated.setLastname("Santos");
+        updated.setCpf("12345678901");
 
         when(personRepository.findById(1L)).thenReturn(Optional.of(person));
-        when(personRepository.save(any(Person.class))).thenReturn(atualizado);
+        when(personRepository.findByCpf("12345678901")).thenReturn(Optional.of(person));
+        when(personRepository.save(any(Person.class))).thenReturn(person);
 
-        Person result = personService.update(1L, detalhes);
+        Person result = personService.update(1L, updated);
 
-        assertThat(result.getLastname()).isEqualTo("Ferreira");
-        verify(personRepository, times(1)).findById(1L);
-        verify(personRepository, times(1)).save(any(Person.class));
+        assertThat(result).isNotNull();
+        verify(personRepository).save(any(Person.class));
     }
 
     @Test
-    @DisplayName("update - deve lançar RuntimeException quando não encontrada")
-    void update_deveLancarExcecaoQuandoNaoEncontrada() {
-        when(personRepository.findById(99L)).thenReturn(Optional.empty());
+    @DisplayName("update - deve lançar exceção para pessoa não encontrada")
+    void update_deveLancarExcecaoParaPessoaNaoEncontrada() {
+        Person updated = new Person();
+        updated.setFirstname("João");
+        updated.setLastname("Santos");
+        updated.setCpf("12345678901");
 
-        assertThatThrownBy(() -> personService.update(99L, new Person()))
+        when(personRepository.findById(1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> personService.update(1L, updated))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessage("Pessoa não encontrada");
-
-        verify(personRepository, never()).save(any());
     }
 
-    // -------------------------------------------------------------------------
-    // deleteById
-    // -------------------------------------------------------------------------
+    @Test
+    @DisplayName("update - deve lançar exceção para CPF duplicado de outra pessoa")
+    void update_deveLancarExcecaoParaCpfDuplicado() {
+        Person otherPerson = new Person();
+        otherPerson.setId(2L);
+        otherPerson.setCpf("99988877766");
+
+        Person updated = new Person();
+        updated.setFirstname("João");
+        updated.setLastname("Santos");
+        updated.setCpf("99988877766");
+
+        when(personRepository.findById(1L)).thenReturn(Optional.of(person));
+        when(personRepository.findByCpf("99988877766")).thenReturn(Optional.of(otherPerson));
+
+        assertThatThrownBy(() -> personService.update(1L, updated))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("CPF já cadastrado para outra pessoa");
+    }
+
+    // ======================== DELETE ========================
 
     @Test
-    @DisplayName("deleteById - deve chamar deleteById no repositório")
-    void deleteById_deveChamarDeleteById() {
-        doNothing().when(personRepository).deleteById(1L);
+    @DisplayName("deleteById - deve excluir pessoa com sucesso")
+    void deleteById_deveExcluirPessoa() {
+        when(personRepository.findById(1L)).thenReturn(Optional.of(person));
 
         personService.deleteById(1L);
 
-        verify(personRepository, times(1)).deleteById(1L);
-    }
-
-    // -------------------------------------------------------------------------
-    // existsById / existsByCpf
-    // -------------------------------------------------------------------------
-
-    @Test
-    @DisplayName("existsById - deve retornar true quando pessoa existe")
-    void existsById_deveRetornarTrueQuandoExiste() {
-        when(personRepository.existsById(1L)).thenReturn(true);
-
-        assertThat(personService.existsById(1L)).isTrue();
-        verify(personRepository, times(1)).existsById(1L);
+        verify(personRepository).delete(person);
     }
 
     @Test
-    @DisplayName("existsById - deve retornar false quando pessoa não existe")
-    void existsById_deveRetornarFalseQuandoNaoExiste() {
-        when(personRepository.existsById(99L)).thenReturn(false);
+    @DisplayName("deleteById - deve lançar exceção quando pessoa tem funcionário vinculado")
+    void deleteById_deveLancarExcecaoQuandoTemFuncionario() {
+        person.setEmployee(new Employee());
+        when(personRepository.findById(1L)).thenReturn(Optional.of(person));
 
-        assertThat(personService.existsById(99L)).isFalse();
-        verify(personRepository, times(1)).existsById(99L);
+        assertThatThrownBy(() -> personService.deleteById(1L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("vinculada a um funcionário");
     }
 
     @Test
-    @DisplayName("existsByCpf - deve retornar true quando CPF existe")
-    void existsByCpf_deveRetornarTrueQuandoCpfExiste() {
-        when(personRepository.existsByCpf("11122233344")).thenReturn(true);
+    @DisplayName("deleteById - deve lançar exceção quando pessoa tem cliente vinculado")
+    void deleteById_deveLancarExcecaoQuandoTemCliente() {
+        person.setCustomer(new Customer());
+        when(personRepository.findById(1L)).thenReturn(Optional.of(person));
 
-        assertThat(personService.existsByCpf("11122233344")).isTrue();
-        verify(personRepository, times(1)).existsByCpf("11122233344");
+        assertThatThrownBy(() -> personService.deleteById(1L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("vinculada a um cliente");
     }
 
     @Test
-    @DisplayName("existsByCpf - deve retornar false quando CPF não existe")
-    void existsByCpf_deveRetornarFalseQuandoCpfNaoExiste() {
-        when(personRepository.existsByCpf("00000000000")).thenReturn(false);
+    @DisplayName("deleteById - deve lançar exceção para pessoa não encontrada")
+    void deleteById_deveLancarExcecaoParaPessoaNaoEncontrada() {
+        when(personRepository.findById(1L)).thenReturn(Optional.empty());
 
-        assertThat(personService.existsByCpf("00000000000")).isFalse();
-        verify(personRepository, times(1)).existsByCpf("00000000000");
+        assertThatThrownBy(() -> personService.deleteById(1L))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("Pessoa não encontrada");
     }
 }

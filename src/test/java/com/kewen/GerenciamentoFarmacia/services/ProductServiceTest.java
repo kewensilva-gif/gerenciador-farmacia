@@ -3,6 +3,7 @@ package com.kewen.GerenciamentoFarmacia.services;
 import com.kewen.GerenciamentoFarmacia.entities.Category;
 import com.kewen.GerenciamentoFarmacia.entities.Product;
 import com.kewen.GerenciamentoFarmacia.repositories.ProductRepository;
+import com.kewen.GerenciamentoFarmacia.repositories.SaleProductRepository;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -28,6 +29,12 @@ class ProductServiceTest {
     @Mock
     private ProductRepository productRepository;
 
+    @Mock
+    private CategoryService categoryService;
+
+    @Mock
+    private SaleProductRepository saleProductRepository;
+
     @InjectMocks
     private ProductService productService;
 
@@ -39,6 +46,7 @@ class ProductServiceTest {
         category = new Category();
         category.setId(1L);
         category.setName("Medicamentos");
+        category.setEnabled(true);
 
         product = new Product();
         product.setId(1L);
@@ -48,237 +56,324 @@ class ProductServiceTest {
         product.setStockQuantity(100);
         product.setExpirationDate(LocalDate.of(2026, 12, 31));
         product.setCategory(category);
+        product.setEnabled(true);
     }
 
-    // -------------------------------------------------------------------------
-    // save
-    // -------------------------------------------------------------------------
+    // ======================== SAVE ========================
 
     @Test
     @DisplayName("save - deve salvar e retornar o produto")
     void save_deveSalvarERetornarProduto() {
+        when(categoryService.findById(1L)).thenReturn(Optional.of(category));
+        when(productRepository.findByBarcode("7891234560001")).thenReturn(Optional.empty());
         when(productRepository.save(any(Product.class))).thenReturn(product);
 
         Product result = productService.save(product);
 
         assertThat(result).isNotNull();
         assertThat(result.getName()).isEqualTo("Paracetamol 500mg");
-        assertThat(result.getBarcode()).isEqualTo("7891234560001");
-        verify(productRepository, times(1)).save(product);
+        verify(productRepository).save(product);
     }
 
-    // -------------------------------------------------------------------------
-    // findById
-    // -------------------------------------------------------------------------
+    @Test
+    @DisplayName("save - deve lançar exceção para preço zero")
+    void save_deveLancarExcecaoParaPrecoZero() {
+        product.setUnitPrice(BigDecimal.ZERO);
+
+        assertThatThrownBy(() -> productService.save(product))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("O preço unitário não pode ser zero ou negativo");
+    }
 
     @Test
-    @DisplayName("findById - deve retornar Optional com produto quando encontrado")
-    void findById_deveRetornarProdutoQuandoEncontrado() {
-        when(productRepository.findById(1L)).thenReturn(Optional.of(product));
+    @DisplayName("save - deve lançar exceção para preço negativo")
+    void save_deveLancarExcecaoParaPrecoNegativo() {
+        product.setUnitPrice(new BigDecimal("-5.00"));
+
+        assertThatThrownBy(() -> productService.save(product))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("O preço unitário não pode ser zero ou negativo");
+    }
+
+    @Test
+    @DisplayName("save - deve lançar exceção para estoque negativo")
+    void save_deveLancarExcecaoParaEstoqueNegativo() {
+        product.setStockQuantity(-1);
+
+        assertThatThrownBy(() -> productService.save(product))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("A quantidade em estoque não pode ser negativa");
+    }
+
+    @Test
+    @DisplayName("save - deve lançar exceção para data de validade expirada")
+    void save_deveLancarExcecaoParaDataValidadeExpirada() {
+        product.setExpirationDate(LocalDate.of(2020, 1, 1));
+
+        assertThatThrownBy(() -> productService.save(product))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("A data de validade não pode ser anterior à data atual");
+    }
+
+    @Test
+    @DisplayName("save - deve lançar exceção para categoria inexistente")
+    void save_deveLancarExcecaoParaCategoriaInexistente() {
+        when(categoryService.findById(1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> productService.save(product))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Categoria não encontrada");
+    }
+
+    @Test
+    @DisplayName("save - deve lançar exceção para código de barras duplicado")
+    void save_deveLancarExcecaoParaCodigoBarrasDuplicado() {
+        when(categoryService.findById(1L)).thenReturn(Optional.of(category));
+        when(productRepository.findByBarcode("7891234560001")).thenReturn(Optional.of(product));
+
+        assertThatThrownBy(() -> productService.save(product))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Código de barras já cadastrado");
+    }
+
+    // ======================== FIND ========================
+
+    @Test
+    @DisplayName("findById - deve retornar produto ativo")
+    void findById_deveRetornarProdutoAtivo() {
+        when(productRepository.findByIdAndEnabledTrue(1L)).thenReturn(Optional.of(product));
 
         Optional<Product> result = productService.findById(1L);
 
         assertThat(result).isPresent();
         assertThat(result.get().getName()).isEqualTo("Paracetamol 500mg");
-        verify(productRepository, times(1)).findById(1L);
+        verify(productRepository).findByIdAndEnabledTrue(1L);
     }
 
     @Test
-    @DisplayName("findById - deve retornar Optional vazio quando não encontrado")
+    @DisplayName("findById - deve retornar vazio para produto não encontrado")
     void findById_deveRetornarVazioQuandoNaoEncontrado() {
-        when(productRepository.findById(99L)).thenReturn(Optional.empty());
+        when(productRepository.findByIdAndEnabledTrue(99L)).thenReturn(Optional.empty());
 
         Optional<Product> result = productService.findById(99L);
 
         assertThat(result).isEmpty();
-        verify(productRepository, times(1)).findById(99L);
     }
 
-    // -------------------------------------------------------------------------
-    // findAll
-    // -------------------------------------------------------------------------
-
     @Test
-    @DisplayName("findAll - deve retornar lista de produtos")
-    void findAll_deveRetornarListaDeProdutos() {
-        when(productRepository.findAll()).thenReturn(List.of(product));
+    @DisplayName("findAll - deve retornar apenas produtos ativos")
+    void findAll_deveRetornarProdutosAtivos() {
+        when(productRepository.findByEnabledTrue()).thenReturn(List.of(product));
 
         List<Product> result = productService.findAll();
 
         assertThat(result).hasSize(1);
-        verify(productRepository, times(1)).findAll();
+        verify(productRepository).findByEnabledTrue();
     }
 
-    // -------------------------------------------------------------------------
-    // findByBarcode
-    // -------------------------------------------------------------------------
-
     @Test
-    @DisplayName("findByBarcode - deve retornar produto pelo código de barras")
-    void findByBarcode_deveRetornarProduto() {
-        when(productRepository.findByBarcode("7891234560001")).thenReturn(Optional.of(product));
+    @DisplayName("findByBarcode - deve buscar por código de barras com enabled")
+    void findByBarcode_deveBuscarPorBarcodeEEnabled() {
+        when(productRepository.findByBarcodeAndEnabledTrue("7891234560001")).thenReturn(Optional.of(product));
 
         Optional<Product> result = productService.findByBarcode("7891234560001");
 
         assertThat(result).isPresent();
-        assertThat(result.get().getId()).isEqualTo(1L);
-        verify(productRepository, times(1)).findByBarcode("7891234560001");
+        verify(productRepository).findByBarcodeAndEnabledTrue("7891234560001");
     }
 
     @Test
-    @DisplayName("findByBarcode - deve retornar Optional vazio quando código de barras não existe")
-    void findByBarcode_deveRetornarVazioQuandoNaoExiste() {
-        when(productRepository.findByBarcode("0000000000000")).thenReturn(Optional.empty());
+    @DisplayName("findByName - deve buscar por nome com enabled")
+    void findByName_deveBuscarPorNomeEEnabled() {
+        when(productRepository.findByNameContainingIgnoreCaseAndEnabledTrue("Paracetamol")).thenReturn(List.of(product));
 
-        Optional<Product> result = productService.findByBarcode("0000000000000");
-
-        assertThat(result).isEmpty();
-        verify(productRepository, times(1)).findByBarcode("0000000000000");
-    }
-
-    // -------------------------------------------------------------------------
-    // findByName
-    // -------------------------------------------------------------------------
-
-    @Test
-    @DisplayName("findByName - deve retornar lista de produtos pelo nome")
-    void findByName_deveRetornarListaPorNome() {
-        when(productRepository.findByNameContainingIgnoreCase("paracetamol")).thenReturn(List.of(product));
-
-        List<Product> result = productService.findByName("paracetamol");
+        List<Product> result = productService.findByName("Paracetamol");
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).getName()).containsIgnoringCase("paracetamol");
-        verify(productRepository, times(1)).findByNameContainingIgnoreCase("paracetamol");
+        verify(productRepository).findByNameContainingIgnoreCaseAndEnabledTrue("Paracetamol");
     }
 
-    // -------------------------------------------------------------------------
-    // findByCategory
-    // -------------------------------------------------------------------------
-
     @Test
-    @DisplayName("findByCategory - deve retornar produtos da categoria informada")
-    void findByCategory_deveRetornarProdutosDaCategoria() {
-        when(productRepository.findByCategoryId(1L)).thenReturn(List.of(product));
+    @DisplayName("findByCategory - deve buscar por categoria com enabled")
+    void findByCategory_deveBuscarPorCategoriaEEnabled() {
+        when(productRepository.findByCategoryIdAndEnabledTrue(1L)).thenReturn(List.of(product));
 
         List<Product> result = productService.findByCategory(1L);
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).getCategory().getName()).isEqualTo("Medicamentos");
-        verify(productRepository, times(1)).findByCategoryId(1L);
+        verify(productRepository).findByCategoryIdAndEnabledTrue(1L);
     }
 
-    // -------------------------------------------------------------------------
-    // findExpiredProducts
-    // -------------------------------------------------------------------------
-
     @Test
-    @DisplayName("findExpiredProducts - deve retornar produtos vencidos")
-    void findExpiredProducts_deveRetornarProdutosVencidos() {
-        Product vencido = new Product();
-        vencido.setId(2L);
-        vencido.setExpirationDate(LocalDate.of(2020, 1, 1));
-
-        when(productRepository.findByExpirationDateBefore(any(LocalDate.class))).thenReturn(List.of(vencido));
+    @DisplayName("findExpiredProducts - deve buscar produtos vencidos ativos")
+    void findExpiredProducts_deveBuscarProdutosVencidosAtivos() {
+        when(productRepository.findByExpirationDateBeforeAndEnabledTrue(any(LocalDate.class))).thenReturn(List.of(product));
 
         List<Product> result = productService.findExpiredProducts();
 
         assertThat(result).hasSize(1);
-        verify(productRepository, times(1)).findByExpirationDateBefore(any(LocalDate.class));
+        verify(productRepository).findByExpirationDateBeforeAndEnabledTrue(any(LocalDate.class));
     }
 
-    // -------------------------------------------------------------------------
-    // findLowStockProducts
-    // -------------------------------------------------------------------------
-
     @Test
-    @DisplayName("findLowStockProducts - deve retornar produtos com estoque baixo")
-    void findLowStockProducts_deveRetornarProdutosComEstoqueBaixo() {
-        Product baixoEstoque = new Product();
-        baixoEstoque.setId(3L);
-        baixoEstoque.setStockQuantity(2);
-
-        when(productRepository.findByStockQuantityLessThan(10)).thenReturn(List.of(baixoEstoque));
+    @DisplayName("findLowStockProducts - deve buscar produtos com estoque baixo ativos")
+    void findLowStockProducts_deveBuscarProdutosEstoqueBaixoAtivos() {
+        when(productRepository.findByStockQuantityLessThanAndEnabledTrue(10)).thenReturn(List.of(product));
 
         List<Product> result = productService.findLowStockProducts(10);
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).getStockQuantity()).isLessThan(10);
-        verify(productRepository, times(1)).findByStockQuantityLessThan(10);
+        verify(productRepository).findByStockQuantityLessThanAndEnabledTrue(10);
     }
 
-    // -------------------------------------------------------------------------
-    // update
-    // -------------------------------------------------------------------------
+    // ======================== UPDATE ========================
 
     @Test
-    @DisplayName("update - deve atualizar e retornar o produto quando encontrado")
-    void update_deveAtualizarProdutoQuandoEncontrado() {
-        Product detalhes = new Product();
-        detalhes.setName("Paracetamol 750mg");
-        detalhes.setUnitPrice(new BigDecimal("15.00"));
-        detalhes.setBarcode("7891234560001");
-        detalhes.setStockQuantity(80);
-        detalhes.setExpirationDate(LocalDate.of(2027, 6, 1));
-        detalhes.setCategory(category);
+    @DisplayName("update - deve atualizar produto existente")
+    void update_deveAtualizarProduto() {
+        Product updated = new Product();
+        updated.setName("Paracetamol 750mg");
+        updated.setUnitPrice(new BigDecimal("15.00"));
+        updated.setBarcode("7891234560001");
+        updated.setExpirationDate(LocalDate.of(2027, 6, 30));
+        updated.setCategory(category);
 
-        Product atualizado = new Product();
-        atualizado.setId(1L);
-        atualizado.setName("Paracetamol 750mg");
-        atualizado.setUnitPrice(new BigDecimal("15.00"));
+        when(categoryService.findById(1L)).thenReturn(Optional.of(category));
+        when(productRepository.findByBarcode("7891234560001")).thenReturn(Optional.of(product));
+        when(productRepository.findByIdAndEnabledTrue(1L)).thenReturn(Optional.of(product));
+        when(productRepository.save(any(Product.class))).thenReturn(product);
 
-        when(productRepository.findById(1L)).thenReturn(Optional.of(product));
-        when(productRepository.save(any(Product.class))).thenReturn(atualizado);
+        Product result = productService.update(1L, updated);
 
-        Product result = productService.update(1L, detalhes);
-
-        assertThat(result.getName()).isEqualTo("Paracetamol 750mg");
-        assertThat(result.getUnitPrice()).isEqualByComparingTo("15.00");
-        verify(productRepository, times(1)).findById(1L);
-        verify(productRepository, times(1)).save(any(Product.class));
+        assertThat(result).isNotNull();
+        verify(productRepository).save(any(Product.class));
     }
 
     @Test
-    @DisplayName("update - deve lançar RuntimeException quando produto não encontrado")
-    void update_deveLancarExcecaoQuandoNaoEncontrado() {
-        when(productRepository.findById(99L)).thenReturn(Optional.empty());
+    @DisplayName("update - deve lançar exceção para produto não encontrado")
+    void update_deveLancarExcecaoParaProdutoNaoEncontrado() {
+        Product updated = new Product();
+        updated.setUnitPrice(new BigDecimal("15.00"));
+        updated.setBarcode("7891234560002");
+        updated.setExpirationDate(LocalDate.of(2027, 6, 30));
+        updated.setCategory(category);
 
-        assertThatThrownBy(() -> productService.update(99L, new Product()))
+        when(categoryService.findById(1L)).thenReturn(Optional.of(category));
+        when(productRepository.findByBarcode("7891234560002")).thenReturn(Optional.empty());
+        when(productRepository.findByIdAndEnabledTrue(1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> productService.update(1L, updated))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessage("Produto não encontrado");
-
-        verify(productRepository, never()).save(any());
     }
 
-    // -------------------------------------------------------------------------
-    // deleteById / existsById
-    // -------------------------------------------------------------------------
+    @Test
+    @DisplayName("update - deve lançar exceção para barcode duplicado de outro produto")
+    void update_deveLancarExcecaoParaBarcodeDuplicado() {
+        Product otherProduct = new Product();
+        otherProduct.setId(2L);
+        otherProduct.setBarcode("7891234560001");
+
+        Product updated = new Product();
+        updated.setUnitPrice(new BigDecimal("15.00"));
+        updated.setBarcode("7891234560001");
+        updated.setExpirationDate(LocalDate.of(2027, 6, 30));
+        updated.setCategory(category);
+
+        when(categoryService.findById(1L)).thenReturn(Optional.of(category));
+        when(productRepository.findByBarcode("7891234560001")).thenReturn(Optional.of(otherProduct));
+
+        assertThatThrownBy(() -> productService.update(1L, updated))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Código de barras já cadastrado");
+    }
+
+    // ======================== STOCK ========================
 
     @Test
-    @DisplayName("deleteById - deve chamar deleteById no repositório")
-    void deleteById_deveChamarDeleteById() {
-        doNothing().when(productRepository).deleteById(1L);
+    @DisplayName("debitStock - deve debitar estoque com sucesso")
+    void debitStock_deveDebitarEstoque() {
+        when(productRepository.findByIdAndEnabledTrue(1L)).thenReturn(Optional.of(product));
+        when(productRepository.save(any(Product.class))).thenReturn(product);
+
+        productService.debitStock(1L, 10);
+
+        assertThat(product.getStockQuantity()).isEqualTo(90);
+        verify(productRepository).save(product);
+    }
+
+    @Test
+    @DisplayName("debitStock - deve lançar exceção para quantidade zero ou negativa")
+    void debitStock_deveLancarExcecaoParaQuantidadeInvalida() {
+        assertThatThrownBy(() -> productService.debitStock(1L, 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("A quantidade a debitar deve ser positiva");
+    }
+
+    @Test
+    @DisplayName("debitStock - deve lançar exceção para estoque insuficiente")
+    void debitStock_deveLancarExcecaoParaEstoqueInsuficiente() {
+        when(productRepository.findByIdAndEnabledTrue(1L)).thenReturn(Optional.of(product));
+
+        assertThatThrownBy(() -> productService.debitStock(1L, 200))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Estoque insuficiente");
+    }
+
+    @Test
+    @DisplayName("addStock - deve adicionar estoque com sucesso")
+    void addStock_deveAdicionarEstoque() {
+        when(productRepository.findById(1L)).thenReturn(Optional.of(product));
+        when(productRepository.save(any(Product.class))).thenReturn(product);
+
+        productService.addStock(1L, 50);
+
+        assertThat(product.getStockQuantity()).isEqualTo(150);
+        verify(productRepository).save(product);
+    }
+
+    @Test
+    @DisplayName("addStock - deve lançar exceção para quantidade zero ou negativa")
+    void addStock_deveLancarExcecaoParaQuantidadeInvalida() {
+        assertThatThrownBy(() -> productService.addStock(1L, -5))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("A quantidade a adicionar deve ser positiva");
+    }
+
+    @Test
+    @DisplayName("addStock - usa findById para permitir reposição em produtos desativados")
+    void addStock_usaFindByIdParaProdutosDesativados() {
+        product.setEnabled(false);
+        when(productRepository.findById(1L)).thenReturn(Optional.of(product));
+        when(productRepository.save(any(Product.class))).thenReturn(product);
+
+        productService.addStock(1L, 10);
+
+        verify(productRepository).findById(1L);
+    }
+
+    // ======================== SOFT DELETE ========================
+
+    @Test
+    @DisplayName("deleteById - deve desativar produto (soft delete)")
+    void deleteById_deveDesativarProduto() {
+        when(productRepository.findByIdAndEnabledTrue(1L)).thenReturn(Optional.of(product));
+        when(productRepository.save(any(Product.class))).thenReturn(product);
 
         productService.deleteById(1L);
 
-        verify(productRepository, times(1)).deleteById(1L);
+        assertThat(product.getEnabled()).isFalse();
+        verify(productRepository).save(product);
+        verify(productRepository, never()).delete(any(Product.class));
     }
 
     @Test
-    @DisplayName("existsById - deve retornar true quando produto existe")
-    void existsById_deveRetornarTrueQuandoExiste() {
-        when(productRepository.existsById(1L)).thenReturn(true);
+    @DisplayName("deleteById - deve lançar exceção para produto não encontrado")
+    void deleteById_deveLancarExcecaoParaProdutoNaoEncontrado() {
+        when(productRepository.findByIdAndEnabledTrue(1L)).thenReturn(Optional.empty());
 
-        assertThat(productService.existsById(1L)).isTrue();
-        verify(productRepository, times(1)).existsById(1L);
-    }
-
-    @Test
-    @DisplayName("existsById - deve retornar false quando produto não existe")
-    void existsById_deveRetornarFalseQuandoNaoExiste() {
-        when(productRepository.existsById(99L)).thenReturn(false);
-
-        assertThat(productService.existsById(99L)).isFalse();
-        verify(productRepository, times(1)).existsById(99L);
+        assertThatThrownBy(() -> productService.deleteById(1L))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("Produto não encontrado");
     }
 }

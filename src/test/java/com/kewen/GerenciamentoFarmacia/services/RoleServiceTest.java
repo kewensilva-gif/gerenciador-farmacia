@@ -2,6 +2,7 @@ package com.kewen.GerenciamentoFarmacia.services;
 
 import com.kewen.GerenciamentoFarmacia.entities.Role;
 import com.kewen.GerenciamentoFarmacia.repositories.RoleRepository;
+import com.kewen.GerenciamentoFarmacia.repositories.UserRepository;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -26,6 +27,9 @@ class RoleServiceTest {
     @Mock
     private RoleRepository roleRepository;
 
+    @Mock
+    private UserRepository userRepository;
+
     @InjectMocks
     private RoleService roleService;
 
@@ -35,191 +39,185 @@ class RoleServiceTest {
     @BeforeEach
     void setUp() {
         roleId = UUID.randomUUID();
+
         role = new Role();
         role.setUuid(roleId);
-        role.setName("ROLE_ADMIN");
+        role.setName("ADMIN");
     }
 
-    // -------------------------------------------------------------------------
-    // save
-    // -------------------------------------------------------------------------
+    // ======================== SAVE ========================
 
     @Test
     @DisplayName("save - deve salvar e retornar a role")
     void save_deveSalvarERetornarRole() {
+        when(roleRepository.existsByName("ADMIN")).thenReturn(false);
         when(roleRepository.save(any(Role.class))).thenReturn(role);
 
         Role result = roleService.save(role);
 
         assertThat(result).isNotNull();
-        assertThat(result.getName()).isEqualTo("ROLE_ADMIN");
-        verify(roleRepository, times(1)).save(role);
+        assertThat(result.getName()).isEqualTo("ADMIN");
+        verify(roleRepository).save(role);
     }
 
-    // -------------------------------------------------------------------------
-    // findById
-    // -------------------------------------------------------------------------
+    @Test
+    @DisplayName("save - deve lançar exceção para nome duplicado")
+    void save_deveLancarExcecaoParaNomeDuplicado() {
+        when(roleRepository.existsByName("ADMIN")).thenReturn(true);
+
+        assertThatThrownBy(() -> roleService.save(role))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("Já existe uma Role com nome");
+    }
+
+    // ======================== FIND ========================
 
     @Test
-    @DisplayName("findById - deve retornar Optional com role quando encontrada")
-    void findById_deveRetornarRoleQuandoEncontrada() {
+    @DisplayName("findById - deve retornar role quando encontrada")
+    void findById_deveRetornarRole() {
         when(roleRepository.findById(roleId)).thenReturn(Optional.of(role));
 
         Optional<Role> result = roleService.findById(roleId);
 
         assertThat(result).isPresent();
-        assertThat(result.get().getName()).isEqualTo("ROLE_ADMIN");
-        verify(roleRepository, times(1)).findById(roleId);
+        assertThat(result.get().getName()).isEqualTo("ADMIN");
     }
 
     @Test
-    @DisplayName("findById - deve retornar Optional vazio quando não encontrada")
+    @DisplayName("findById - deve retornar vazio quando não encontrada")
     void findById_deveRetornarVazioQuandoNaoEncontrada() {
-        UUID outroId = UUID.randomUUID();
-        when(roleRepository.findById(outroId)).thenReturn(Optional.empty());
+        UUID randomId = UUID.randomUUID();
+        when(roleRepository.findById(randomId)).thenReturn(Optional.empty());
 
-        Optional<Role> result = roleService.findById(outroId);
+        Optional<Role> result = roleService.findById(randomId);
 
         assertThat(result).isEmpty();
-        verify(roleRepository, times(1)).findById(outroId);
     }
-
-    // -------------------------------------------------------------------------
-    // findAll
-    // -------------------------------------------------------------------------
 
     @Test
     @DisplayName("findAll - deve retornar lista de roles")
     void findAll_deveRetornarListaDeRoles() {
-        Role outra = new Role();
-        outra.setUuid(UUID.randomUUID());
-        outra.setName("ROLE_USER");
-
-        when(roleRepository.findAll()).thenReturn(List.of(role, outra));
+        when(roleRepository.findAll()).thenReturn(List.of(role));
 
         List<Role> result = roleService.findAll();
 
-        assertThat(result).hasSize(2);
-        assertThat(result).extracting(Role::getName).containsExactlyInAnyOrder("ROLE_ADMIN", "ROLE_USER");
-        verify(roleRepository, times(1)).findAll();
+        assertThat(result).hasSize(1);
     }
 
-    // -------------------------------------------------------------------------
-    // findByName
-    // -------------------------------------------------------------------------
-
     @Test
-    @DisplayName("findByName - deve retornar role pelo nome")
-    void findByName_deveRetornarRolePeloNome() {
-        when(roleRepository.findByName("ROLE_ADMIN")).thenReturn(Optional.of(role));
+    @DisplayName("findByName - deve retornar role por nome")
+    void findByName_deveRetornarRolePorNome() {
+        when(roleRepository.findByName("ADMIN")).thenReturn(Optional.of(role));
 
-        Optional<Role> result = roleService.findByName("ROLE_ADMIN");
+        Optional<Role> result = roleService.findByName("ADMIN");
 
         assertThat(result).isPresent();
-        assertThat(result.get().getUuid()).isEqualTo(roleId);
-        verify(roleRepository, times(1)).findByName("ROLE_ADMIN");
     }
 
-    @Test
-    @DisplayName("findByName - deve retornar Optional vazio quando nome não existe")
-    void findByName_deveRetornarVazioQuandoNaoExiste() {
-        when(roleRepository.findByName("ROLE_INEXISTENTE")).thenReturn(Optional.empty());
-
-        Optional<Role> result = roleService.findByName("ROLE_INEXISTENTE");
-
-        assertThat(result).isEmpty();
-        verify(roleRepository, times(1)).findByName("ROLE_INEXISTENTE");
-    }
-
-    // -------------------------------------------------------------------------
-    // update
-    // -------------------------------------------------------------------------
+    // ======================== UPDATE ========================
 
     @Test
-    @DisplayName("update - deve atualizar e retornar a role quando encontrada")
-    void update_deveAtualizarRoleQuandoEncontrada() {
-        Role detalhes = new Role();
-        detalhes.setName("ROLE_MANAGER");
-
-        Role atualizada = new Role();
-        atualizada.setUuid(roleId);
-        atualizada.setName("ROLE_MANAGER");
+    @DisplayName("update - deve atualizar role existente")
+    void update_deveAtualizarRole() {
+        Role updated = new Role();
+        updated.setName("SUPER_ADMIN");
 
         when(roleRepository.findById(roleId)).thenReturn(Optional.of(role));
-        when(roleRepository.save(any(Role.class))).thenReturn(atualizada);
+        when(roleRepository.existsByName("SUPER_ADMIN")).thenReturn(false);
+        when(roleRepository.save(any(Role.class))).thenReturn(role);
 
-        Role result = roleService.update(roleId, detalhes);
+        Role result = roleService.update(roleId, updated);
 
-        assertThat(result.getName()).isEqualTo("ROLE_MANAGER");
-        verify(roleRepository, times(1)).findById(roleId);
-        verify(roleRepository, times(1)).save(any(Role.class));
+        assertThat(result).isNotNull();
+        verify(roleRepository).save(role);
     }
 
     @Test
-    @DisplayName("update - deve lançar RuntimeException quando role não encontrada")
-    void update_deveLancarExcecaoQuandoNaoEncontrada() {
-        UUID outroId = UUID.randomUUID();
-        when(roleRepository.findById(outroId)).thenReturn(Optional.empty());
+    @DisplayName("update - deve lançar exceção para role não encontrada")
+    void update_deveLancarExcecaoParaRoleNaoEncontrada() {
+        Role updated = new Role();
+        updated.setName("SUPER_ADMIN");
 
-        assertThatThrownBy(() -> roleService.update(outroId, new Role()))
-                .isInstanceOf(RuntimeException.class)
+        when(roleRepository.findById(roleId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> roleService.update(roleId, updated))
+                .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Role não encontrada");
-
-        verify(roleRepository, never()).save(any());
     }
 
-    // -------------------------------------------------------------------------
-    // deleteById
-    // -------------------------------------------------------------------------
+    @Test
+    @DisplayName("update - deve lançar exceção para nome nulo")
+    void update_deveLancarExcecaoParaNomeNulo() {
+        Role updated = new Role();
+        updated.setName(null);
+
+        when(roleRepository.findById(roleId)).thenReturn(Optional.of(role));
+
+        assertThatThrownBy(() -> roleService.update(roleId, updated))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Nome da role é obrigatório");
+    }
 
     @Test
-    @DisplayName("deleteById - deve chamar deleteById no repositório")
-    void deleteById_deveChamarDeleteById() {
-        doNothing().when(roleRepository).deleteById(roleId);
+    @DisplayName("update - deve lançar exceção para nome duplicado de outra role")
+    void update_deveLancarExcecaoParaNomeDuplicado() {
+        Role updated = new Role();
+        updated.setName("EMPLOYEE");
+
+        when(roleRepository.findById(roleId)).thenReturn(Optional.of(role));
+        when(roleRepository.existsByName("EMPLOYEE")).thenReturn(true);
+
+        assertThatThrownBy(() -> roleService.update(roleId, updated))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Já existe uma Role com nome");
+    }
+
+    @Test
+    @DisplayName("update - não deve verificar duplicata quando nome não alterou")
+    void update_naoDeveVerificarDuplicataQuandoNaoAlterou() {
+        Role updated = new Role();
+        updated.setName("ADMIN");
+
+        when(roleRepository.findById(roleId)).thenReturn(Optional.of(role));
+        when(roleRepository.save(any(Role.class))).thenReturn(role);
+
+        Role result = roleService.update(roleId, updated);
+
+        assertThat(result).isNotNull();
+        verify(roleRepository, never()).existsByName(anyString());
+    }
+
+    // ======================== DELETE ========================
+
+    @Test
+    @DisplayName("deleteById - deve excluir role com sucesso")
+    void deleteById_deveExcluirRole() {
+        when(roleRepository.findById(roleId)).thenReturn(Optional.of(role));
+        when(userRepository.existsByRoleUuid(roleId)).thenReturn(false);
 
         roleService.deleteById(roleId);
 
-        verify(roleRepository, times(1)).deleteById(roleId);
-    }
-
-    // -------------------------------------------------------------------------
-    // existsById / existsByName
-    // -------------------------------------------------------------------------
-
-    @Test
-    @DisplayName("existsById - deve retornar true quando role existe")
-    void existsById_deveRetornarTrueQuandoExiste() {
-        when(roleRepository.existsById(roleId)).thenReturn(true);
-
-        assertThat(roleService.existsById(roleId)).isTrue();
-        verify(roleRepository, times(1)).existsById(roleId);
+        verify(roleRepository).delete(role);
     }
 
     @Test
-    @DisplayName("existsById - deve retornar false quando role não existe")
-    void existsById_deveRetornarFalseQuandoNaoExiste() {
-        UUID outroId = UUID.randomUUID();
-        when(roleRepository.existsById(outroId)).thenReturn(false);
+    @DisplayName("deleteById - deve lançar exceção quando role tem usuários vinculados")
+    void deleteById_deveLancarExcecaoQuandoTemUsuarios() {
+        when(roleRepository.findById(roleId)).thenReturn(Optional.of(role));
+        when(userRepository.existsByRoleUuid(roleId)).thenReturn(true);
 
-        assertThat(roleService.existsById(outroId)).isFalse();
-        verify(roleRepository, times(1)).existsById(outroId);
+        assertThatThrownBy(() -> roleService.deleteById(roleId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("vinculada a usuários");
     }
 
     @Test
-    @DisplayName("existsByName - deve retornar true quando nome existe")
-    void existsByName_deveRetornarTrueQuandoNomeExiste() {
-        when(roleRepository.existsByName("ROLE_ADMIN")).thenReturn(true);
+    @DisplayName("deleteById - deve lançar exceção para role não encontrada")
+    void deleteById_deveLancarExcecaoParaRoleNaoEncontrada() {
+        when(roleRepository.findById(roleId)).thenReturn(Optional.empty());
 
-        assertThat(roleService.existsByName("ROLE_ADMIN")).isTrue();
-        verify(roleRepository, times(1)).existsByName("ROLE_ADMIN");
-    }
-
-    @Test
-    @DisplayName("existsByName - deve retornar false quando nome não existe")
-    void existsByName_deveRetornarFalseQuandoNomeNaoExiste() {
-        when(roleRepository.existsByName("ROLE_INEXISTENTE")).thenReturn(false);
-
-        assertThat(roleService.existsByName("ROLE_INEXISTENTE")).isFalse();
-        verify(roleRepository, times(1)).existsByName("ROLE_INEXISTENTE");
+        assertThatThrownBy(() -> roleService.deleteById(roleId))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("Role não encontrada");
     }
 }
